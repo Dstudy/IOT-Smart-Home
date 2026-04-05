@@ -16,10 +16,11 @@ model SensorData {
 }
 
 model Device {
-  id          Int      @id @default(autoincrement())
-  name        String   @unique
-  status      String   @default("OFF")
-  lastToggled DateTime @default(now())
+  id            Int      @id @default(autoincrement())
+  name          String   @unique
+  status        String   @default("OFF")
+  lastToggled   DateTime @default(now())
+  autoMode      Boolean  @default(false)
 }
 
 model ActivityLog {
