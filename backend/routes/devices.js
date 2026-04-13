@@ -4,8 +4,21 @@ const dataStore = require("../services/dataStore");
 const mqttService = require("../services/mqttService");
 
 /**
- * GET /api/devices
- * Get all device states
+ * @swagger
+ * tags:
+ *   name: Devices
+ *   description: Quản lý trạng thái và điều khiển thiết bị (AC, Light, Fan)
+ */
+
+/**
+ * @swagger
+ * /api/devices:
+ *   get:
+ *     summary: Lấy danh sách trạng thái tất cả thiết bị
+ *     tags: [Devices]
+ *     responses:
+ *       200:
+ *         description: Trả về trạng thái hiện tại của các thiết bị
  */
 router.get("/", async (req, res) => {
   try {
@@ -23,14 +36,30 @@ router.get("/", async (req, res) => {
 });
 
 /**
- * POST /api/devices/:deviceName/toggle
- * Toggle a device ON/OFF
+ * @swagger
+ * /api/devices/{deviceName}/toggle:
+ *   post:
+ *     summary: Bật/Tắt thiết bị
+ *     tags: [Devices]
+ *     parameters:
+ *       - in: path
+ *         name: deviceName
+ *         required: true
+ *         schema:
+ *           type: string
+ *           enum: [ac, light, fan]
+ *         description: Tên thiết bị cần điều khiển
+ *     responses:
+ *       200:
+ *         description: Điều khiển thành công
+ *       400:
+ *         description: Tên thiết bị không hợp lệ
+ *       500:
+ *         description: Lỗi kết nối MQTT hoặc lỗi server
  */
 router.post("/:deviceName/toggle", async (req, res) => {
   try {
     const { deviceName } = req.params;
-
-    // Validate device name
     const validDevices = ["ac", "light", "fan"];
     if (!validDevices.includes(deviceName)) {
       return res.status(400).json({
@@ -48,8 +77,6 @@ router.post("/:deviceName/toggle", async (req, res) => {
     }
 
     const newStatus = currentDevice.status === "ON" ? "OFF" : "ON";
-
-    // 1. Immediately log as Waiting (Chờ xử lí)
     const logEntry = await dataStore.addActivityLog({
       deviceName: currentDevice.name,
       action: newStatus,
@@ -57,10 +84,7 @@ router.post("/:deviceName/toggle", async (req, res) => {
     });
 
     try {
-      // 2. Await actual MQTT response from ESP32
       await mqttService.toggleDevice(deviceName, newStatus);
-
-      // 3. Status Success
       const device = await dataStore.toggleDeviceWithoutLogging(deviceName);
       await dataStore.updateActivityLog(logEntry.id, { status: "Thành công" });
 
@@ -70,32 +94,48 @@ router.post("/:deviceName/toggle", async (req, res) => {
         message: `${device.name} turned ${device.status} successfully`,
       });
     } catch (mqttError) {
-      // 4. Status Fail
-      console.error("MQTT Toggle Error:", mqttError.message);
       await dataStore.updateActivityLog(logEntry.id, { status: "Thất bại" });
-
       return res.status(500).json({
         success: false,
         error: "Thiết bị không phản hồi. " + mqttError.message,
       });
     }
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: error.message,
-    });
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 
 /**
- * POST /api/devices/:deviceName/auto
- * Set auto mode (threshold is fixed from environment)
+ * @swagger
+ * /api/devices/{deviceName}/auto:
+ *   post:
+ *     summary: Thiết lập chế độ tự động cho thiết bị
+ *     tags: [Devices]
+ *     parameters:
+ *       - in: path
+ *         name: deviceName
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Tên thiết bị
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               autoMode:
+ *                 type: boolean
+ *                 example: true
+ *     responses:
+ *       200:
+ *         description: Cập nhật chế độ tự động thành công
  */
 router.post("/:deviceName/auto", async (req, res) => {
   try {
     const { deviceName } = req.params;
     const { autoMode } = req.body;
-
     let mode = autoMode === true || autoMode === "true";
 
     const devices = await dataStore.getDevices();
@@ -106,17 +146,13 @@ router.post("/:deviceName/auto", async (req, res) => {
     }
 
     const device = await dataStore.updateDeviceAutoMode(deviceName, mode);
-
     return res.json({
       success: true,
       data: device,
       message: `Auto mode for ${device.name} updated`,
     });
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: error.message,
-    });
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 

@@ -9,10 +9,14 @@ datasource db {
 
 model SensorData {
   id           Int      @id @default(autoincrement())
-  temperature  Float
-  humidity     Float
-  ambientLight Float
+  sensorId     Int
+  value        Float
   timestamp    DateTime @default(now())
+}
+
+model Sensor{
+  id Int @id @default(autoincrement())
+  name String @unique
 }
 
 model Device {

@@ -4,6 +4,8 @@ const express = require("express");
 const cors = require("cors");
 const { WebSocketServer } = require("ws");
 const http = require("http");
+const swaggerJsdoc = require("swagger-jsdoc");
+const swaggerUi = require("swagger-ui-express");
 
 const dataStore = require("./services/dataStore");
 const mqttService = require("./services/mqttService");
@@ -101,3 +103,26 @@ process.on("SIGTERM", () => {
     console.log("HTTP server closed");
   });
 });
+
+const swaggerOptions = {
+  definition: {
+    openapi: "3.0.0",
+    info: {
+      title: "IoT API Documentation",
+      version: "1.0.0",
+      description: "Tài liệu API cho hệ thống quản lý Sensors và Devices",
+    },
+    servers: [
+      {
+        url: "http://localhost:3000", // Thay port 3000 bằng port bạn đang dùng
+      },
+    ],
+  },
+  // Đường dẫn tới các file chứa ghi chú Swagger (JSDoc)
+  apis: ["./routes/*.js"],
+};
+
+const swaggerSpec = swaggerJsdoc(swaggerOptions);
+
+// Endpoint hiển thị giao diện Swagger
+app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));

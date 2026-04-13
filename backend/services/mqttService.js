@@ -66,66 +66,64 @@ class MqttService extends EventEmitter {
   async handleSensorData(payloadStr) {
     // Expected JSON: {"temp": 25.5, "hum": 60, "lightValue": 800, "gasState": 1}
     const data = JSON.parse(payloadStr);
+    console.log("📥 MQTT Sensor Data Received:", data);
 
-    if (
-      data.temp !== undefined &&
-      data.hum !== undefined &&
-      data.lightValue !== undefined
-    ) {
-      const sensorData = {
-        temperature: data.temp,
-        humidity: data.hum,
-        ambientLight: data.lightValue,
-      };
+    const sensorData = {};
+    if (data.temp !== undefined) sensorData.temperature = data.temp;
+    if (data.hum !== undefined) sensorData.humidity = data.hum;
+    if (data.lightValue !== undefined)
+      sensorData.ambientLight = data.lightValue;
 
-      try {
-        // Update dataStore
-        const record = await dataStore.updateSensorData(sensorData);
+    if (Object.keys(sensorData).length === 0) {
+      console.warn("⚠️ No valid sensor data found in payload");
+      return;
+    }
 
-        // Auto mode logic for light
-        const devices = await dataStore.getDevices();
-        const lightDevice = devices["light"];
-        let updatedDevices = null;
+    try {
+      // Save split records for each sensor type
+      const record = await dataStore.updateSensorData(sensorData);
 
-        if (lightDevice && lightDevice.autoMode) {
-          const threshold = parseInt(process.env.AUTO_LIGHT_THRESHOLD) || 500;
-          // ON when UNDER threshold, OFF when OVER
-          const targetState =
-            sensorData.ambientLight < threshold ? "ON" : "OFF";
+      // Auto mode logic for light
+      const devices = await dataStore.getDevices();
+      const lightDevice = devices["light"];
+      let updatedDevices = null;
 
-          if (lightDevice.status !== targetState) {
-            try {
-              const logEntry = await dataStore.addActivityLog({
-                deviceName: lightDevice.name,
-                action: targetState,
-                status: "Chờ xử lí (Auto)",
-              });
+      if (lightDevice && lightDevice.autoMode) {
+        const threshold = parseInt(process.env.AUTO_LIGHT_THRESHOLD) || 500;
+        // ON when UNDER threshold, OFF when OVER
+        const targetState = sensorData.ambientLight < threshold ? "ON" : "OFF";
 
-              await this.toggleDevice("light", targetState);
+        if (lightDevice.status !== targetState) {
+          try {
+            const logEntry = await dataStore.addActivityLog({
+              deviceName: lightDevice.name,
+              action: targetState,
+              status: "Chờ xử lí (Auto)",
+            });
 
-              await dataStore.toggleDeviceWithoutLogging("light");
-              await dataStore.updateActivityLog(logEntry.id, {
-                status: "Thành công",
-              });
+            await this.toggleDevice("light", targetState);
 
-              updatedDevices = await dataStore.getDevices();
-            } catch (err) {
-              console.error("Auto tracking error:", err.message);
-            }
+            await dataStore.toggleDeviceWithoutLogging("light");
+            await dataStore.updateActivityLog(logEntry.id, {
+              status: "Thành công",
+            });
+
+            updatedDevices = await dataStore.getDevices();
+          } catch (err) {
+            console.error("Auto tracking error:", err.message);
           }
         }
-
-        // Emit event so the WebSocket server can broadcast it
-        this.emit(
-          "sensorUpdate",
-          updatedDevices ? { ...record, devices: updatedDevices } : record,
-        );
-      } catch (err) {
-        console.error("Error saving sensor data to DB:", err);
       }
+
+      // Emit event so the WebSocket server can broadcast it
+      this.emit(
+        "sensorUpdate",
+        updatedDevices ? { ...record, devices: updatedDevices } : record,
+      );
+    } catch (err) {
+      console.error("❌ Error saving sensor data to DB:", err.message, err);
     }
   }
-
   handleDeviceResponse(payloadStr) {
     // Expected JSON: {"device": "Fan", "action": "ON", "status": "success"}
     const data = JSON.parse(payloadStr);
