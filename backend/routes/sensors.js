@@ -65,15 +65,27 @@ router.get("/current", async (req, res) => {
  */
 router.get("/history", async (req, res) => {
   try {
-    const { page, limit, sortBy, sortOrder, search } = req.query;
+    const {
+      page,
+      limit,
+      sortBy,
+      sortOrder,
+      searchDate,
+      searchValue,
+      sensorType,
+    } = req.query;
 
     const options = {
       page: parseInt(page) || 1,
       limit: parseInt(limit) || 10,
       sortBy: sortBy || "timestamp",
       sortOrder: sortOrder || "desc",
-      search: search || "",
+      searchDate: searchDate || "",
+      searchValue: searchValue || "",
+      sensorType: sensorType || "all",
     };
+
+    console.log("Fetching sensor history with options:", options);
 
     const result = await dataStore.getSensorHistory(options);
 

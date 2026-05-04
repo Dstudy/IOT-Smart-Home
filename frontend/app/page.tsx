@@ -4,13 +4,24 @@ import React, { useEffect, useState, useCallback } from "react";
 import SensorCard from "@/components/SensorCard";
 import DeviceControl from "@/components/DeviceControl";
 import RealtimeChart from "@/components/RealtimeChart";
-
-// Import Icons (Giả sử bạn dùng lucide-react hoặc tương tự)
-// Nếu không, hãy thay thế bằng string hoặc component icon của bạn
 import { Thermometer, Droplets, Sun } from "lucide-react";
+import { toast } from "react-toastify";
 
 const API_URL = "http://localhost:5000";
 const WS_URL = "ws://localhost:5000";
+
+// --- Interfaces ---
+interface DeviceStats {
+  deviceName: string;
+  onCount: number;
+  offCount: number;
+  total: number;
+}
+
+interface DailyChartData {
+  date: string;
+  count: number;
+}
 
 interface SensorData {
   temperature: number;
@@ -41,6 +52,31 @@ export default function Dashboard() {
     "connected" | "disconnected" | "connecting"
   >("connecting");
 
+  const [dailyStats, setDailyStats] = useState<DailyChartData[]>([]);
+
+  // 1. Hàm fetch thống kê cho từng thiết bị của một ngày cụ thể
+  const fetchStats = useCallback(async (targetDate?: string) => {
+    try {
+      // Nếu targetDate có giá trị (ví dụ "2024-05-02"), thêm nó vào query string
+      // Nếu không, API sẽ mặc định lấy ngày hôm nay
+      const url = targetDate
+        ? `${API_URL}/api/devices/daily-device-breakdown?date=${targetDate}`
+        : `${API_URL}/api/devices/daily-device-breakdown`;
+
+      const dailyRes = await fetch(url);
+      const dailyJson = await dailyRes.json();
+
+      if (dailyJson.success) {
+        setDailyStats(dailyJson.data);
+      } else {
+        throw new Error(dailyJson.error);
+      }
+    } catch (error: any) {
+      console.error("Lỗi khi fetch thống kê:", error);
+      toast.error("Không thể tải thông tin thống kê: " + error.message);
+    }
+  }, []);
+
   const connectWebSocket = useCallback(() => {
     setConnectionStatus("connecting");
     const websocket = new WebSocket(WS_URL);
@@ -70,15 +106,22 @@ export default function Dashboard() {
     return websocket;
   }, []);
 
+  // Khởi tạo
   useEffect(() => {
     const websocket = connectWebSocket();
+
+    // Fetch dữ liệu thiết bị ban đầu
     fetch(`${API_URL}/api/devices`)
       .then((res) => res.json())
       .then((data) => {
         if (data.success) setDevices(data.data);
       });
+
+    // Fetch thống kê ban đầu
+    fetchStats();
+
     return () => websocket.close();
-  }, [connectWebSocket]);
+  }, [connectWebSocket, fetchStats]);
 
   const handleDeviceToggle = async (deviceName: string) => {
     try {
@@ -88,10 +131,21 @@ export default function Dashboard() {
       );
       const data = await response.json();
       if (data.success && devices) {
-        setDevices({ ...devices, [deviceName]: data.data });
+        setDevices((prevDevices) => {
+          if (!prevDevices) return null;
+          return { ...prevDevices, [deviceName]: data.data };
+        });
+        toast.success(
+          `Đã ${data.data.status === "ON" ? "bật" : "tắt"} thiết bị thành công!`,
+        );
+        // Sau khi bật/tắt thành công, cập nhật lại bảng thống kê ngay lập tức
+        fetchStats();
+      } else {
+        toast.error(data.message || "Lỗi khi điều khiển thiết bị!");
       }
     } catch (error) {
       console.error(error);
+      toast.error("Không thể kết nối đến máy chủ!");
     }
   };
 
@@ -108,23 +162,30 @@ export default function Dashboard() {
       const data = await response.json();
       if (data.success && devices) {
         setDevices({ ...devices, [deviceName]: data.data });
+        toast.success(`Đã ${autoMode ? "bật" : "tắt"} chế độ tự động!`);
+      } else {
+        toast.error(data.message || "Lỗi khi cập nhật chế độ tự động!");
       }
     } catch (error) {
       console.error(error);
+      toast.error("Không thể cập nhật chế độ tự động!");
     }
   };
 
   if (!sensorData)
     return (
-      <div className="h-screen flex items-center justify-center">
-        Loading...
+      <div className="h-screen flex items-center justify-center bg-gray-50 font-sans text-gray-500">
+        <div className="flex flex-col items-center gap-2">
+          <div className="w-8 h-8 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin"></div>
+          <span>Đang kết nối hệ thống...</span>
+        </div>
       </div>
     );
 
   return (
-    <div className="h-screen w-full bg-gray-50 p-4 flex flex-col overflow-hidden font-sans">
+    <div className="min-h-screen w-full bg-gray-50 p-4 flex flex-col gap-4 font-sans overflow-y-auto">
       {/* 1. Header */}
-      <div className="flex justify-between items-center mb-4 shrink-0">
+      <div className="flex justify-between items-center mb-2 shrink-0">
         <h1 className="text-xl font-bold text-gray-800">Smart Home Central</h1>
         <div className="flex items-center gap-2 px-3 py-1 bg-white rounded-full shadow-sm border border-gray-100">
           <div
@@ -136,53 +197,43 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* 2. Top Row: 3 Sensor Cards với Gradient màu sắc */}
-      <div className="grid grid-cols-3 gap-4 mb-4 shrink-0">
+      {/* 2. Top Row: Sensor Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 shrink-0">
         <SensorCard
           title="Nhiệt độ"
           value={sensorData.temperature}
           unit="°C"
+          type="temp"
           icon={<Thermometer className="w-5 h-5" />}
-          iconColor="text-red-500"
-          // Gradient nhẹ màu Đỏ
-          gradientClass="from-red-50 to-red-100/50 border border-red-100"
         />
         <SensorCard
           title="Độ ẩm"
           value={sensorData.humidity}
           unit="%"
+          type="humidity"
           icon={<Droplets className="w-5 h-5" />}
-          iconColor="text-blue-500"
-          // Gradient nhẹ màu Xanh nước biển
-          gradientClass="from-blue-50 to-blue-100/50 border border-blue-100"
         />
         <SensorCard
           title="Ánh sáng"
           value={sensorData.ambientLight}
           unit="Lux"
+          type="light"
           icon={<Sun className="w-5 h-5" />}
-          iconColor="text-yellow-600"
-          // Gradient nhẹ màu Vàng
-          gradientClass="from-yellow-50 to-yellow-100/50 border border-yellow-100"
         />
       </div>
 
-      {/* 3. Main Content: Giữ nguyên bố cục không scroll */}
-      <div className="flex flex-1 gap-4 overflow-hidden">
-        {/* Cột trái: Chart */}
-        <div className="flex-[2] flex flex-col overflow-hidden">
-          <div className="flex-1 bg-white p-4 rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-            <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">
-              Lịch sử môi trường (Real-time)
-            </h2>
-            <div className="h-full w-full pb-8">
-              <RealtimeChart data={chartData} />
-            </div>
+      {/* 3. Main Content: Chart & Control */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 min-h-[350px]">
+        <div className="lg:col-span-2 bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex flex-col">
+          <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">
+            Lịch sử môi trường (Real-time)
+          </h2>
+          <div className="flex-1 w-full">
+            <RealtimeChart data={chartData} />
           </div>
         </div>
 
-        {/* Cột phải: 3 nút điều khiển dọc */}
-        <div className="flex-1 bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex flex-col gap-3">
+        <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex flex-col gap-3">
           <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">
             Điều khiển nhanh
           </h2>
@@ -208,10 +259,22 @@ export default function Dashboard() {
                 autoMode={devices.light.autoMode}
                 onAutoChange={handleAutoChange}
               />
+              <DeviceControl
+                deviceName="dehumidifier"
+                displayName="Máy hút ẩm"
+                status={devices.dehumidifier.status}
+                onToggle={handleDeviceToggle}
+              />
+              <DeviceControl
+                deviceName="screen"
+                displayName="Màn hình"
+                status={devices.screen.status}
+                onToggle={handleDeviceToggle}
+              />
             </>
           )}
-          <div className="mt-auto p-3 bg-gray-50 rounded-lg border border-gray-100">
-            <p className="text-[11px] text-gray-600 font-medium">
+          <div className="mt-auto p-3 bg-emerald-50 rounded-lg border border-emerald-100">
+            <p className="text-[11px] text-emerald-700 font-medium italic">
               Hệ thống đang hoạt động ổn định.
             </p>
           </div>

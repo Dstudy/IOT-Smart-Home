@@ -60,11 +60,12 @@ router.get("/", async (req, res) => {
 router.post("/:deviceName/toggle", async (req, res) => {
   try {
     const { deviceName } = req.params;
-    const validDevices = ["ac", "light", "fan"];
+    const validDevices = ["ac", "light", "fan", "dehumidifier", "screen"];
     if (!validDevices.includes(deviceName)) {
       return res.status(400).json({
         success: false,
-        error: "Invalid device name. Valid devices: ac, light, fan",
+        error:
+          "Invalid device name. Valid devices: ac, light, fan, dehumidifier, screen",
       });
     }
 
@@ -150,6 +151,35 @@ router.post("/:deviceName/auto", async (req, res) => {
       success: true,
       data: device,
       message: `Auto mode for ${device.name} updated`,
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Endpoint lấy thống kê của từng thiết bị trong một ngày cụ thể
+router.get("/daily-device-breakdown", async (req, res) => {
+  // console.log("Get daily device breakdown called with query:", req.query);
+
+  const { date } = req.query; // Ví dụ: ?date=2024-05-02
+
+  try {
+    // Nếu có truyền date thì convert, không thì mặc định là hôm nay
+    const targetDate = date ? new Date(date) : new Date();
+
+    // Kiểm tra tính hợp lệ của ngày
+    if (isNaN(targetDate.getTime())) {
+      return res
+        .status(400)
+        .json({ success: false, error: "Invalid date format" });
+    }
+
+    const stats = await dataStore.getDailyDeviceStats(targetDate);
+
+    res.json({
+      success: true,
+      date: targetDate.toISOString().split("T")[0], // Trả về ngày dưới dạng YYYY-MM-DD
+      data: stats,
     });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });

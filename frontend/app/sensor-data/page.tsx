@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useState, useCallback } from "react";
+import { toast } from "react-toastify";
 
 const API_URL = "http://localhost:5000";
 
@@ -11,18 +12,10 @@ interface SensorRecord {
   timestamp: string;
 }
 
-interface FlattenedRecord {
-  id: string;
-  sensor: string;
-  value: string;
-  timestamp: string;
-  timestampMs: number;
-}
-
 export default function SensorDataPage() {
   const [data, setData] = useState<SensorRecord[]>([]);
   const [dateSearch, setDateSearch] = useState("");
-  const [searchValue, setSearchValue] = useState(""); // triggers backend fetch
+  const [valueSearch, setValueSearch] = useState(""); // triggers backend fetch
   const [selectedSensor, setSelectedSensor] = useState("all");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
 
@@ -34,8 +27,9 @@ export default function SensorDataPage() {
   const fetchSensorData = useCallback(async () => {
     try {
       const response = await fetch(
-        `${API_URL}/api/sensors/history?page=${currentPage}&limit=${pageSize}&sortBy=timestamp&sortOrder=desc&search=${searchValue}`,
+        `${API_URL}/api/sensors/history?page=${currentPage}&limit=${pageSize}&sortBy=timestamp&sortOrder=desc&searchDate=${dateSearch}&searchValue=${valueSearch}&sensorType=${selectedSensor}`,
       );
+
       const result = await response.json();
 
       if (result.success) {
@@ -43,18 +37,19 @@ export default function SensorDataPage() {
         setTotalPages(result.pagination.totalPages);
       } else {
         console.error("API returned success: false", result);
+        toast.error(result.message || "Lỗi khi tải dữ liệu cảm biến!");
       }
     } catch (error) {
       console.error("Error fetching sensor data:", error);
+      toast.error("Không thể kết nối đến máy chủ!");
     }
-  }, [currentPage, pageSize, searchValue]);
+  }, [currentPage, pageSize, dateSearch, valueSearch, selectedSensor]);
 
   useEffect(() => {
     fetchSensorData();
   }, [fetchSensorData]);
 
   const handleSearchClick = () => {
-    setSearchValue(dateSearch);
     setCurrentPage(1);
   };
 
@@ -65,7 +60,7 @@ export default function SensorDataPage() {
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
   };
 
-  let displayData = data.map((record) => {
+  const displayData = data.map((record) => {
     let sensorName = "";
     let unit = "";
 
@@ -96,10 +91,6 @@ export default function SensorDataPage() {
     };
   });
 
-  if (selectedSensor !== "all") {
-    displayData = displayData.filter((item) => item.sensor === selectedSensor);
-  }
-
   // Custom sort across the flattened data
   if (sortOrder === "asc") {
     displayData.sort((a, b) => a.timestampMs - b.timestampMs);
@@ -110,16 +101,16 @@ export default function SensorDataPage() {
   const toggleSort = () => {
     setSortOrder((prev) => (prev === "desc" ? "asc" : "desc"));
   };
-
   return (
-    <div className="min-h-[calc(100vh-theme(spacing.16))] bg-[#0f172a] text-gray-300 font-sans p-6 md:p-10 w-full h-full overflow-y-auto">
+    <div className="min-h-[calc(100vh-theme(spacing.16))] bg-gray-50 text-slate-700 font-sans p-6 md:p-10 w-full h-full overflow-y-auto">
       {/* Top Bar for filters */}
-      <div className="bg-[#1e293b] rounded-xl p-4 flex flex-col md:flex-row items-center justify-between mb-8 shadow-lg border border-gray-700">
-        <div className="flex items-center space-x-4 w-full md:w-auto mb-4 md:mb-0">
-          <div className="relative">
+      <div className="bg-white rounded-xl p-4 flex flex-col md:flex-row items-center justify-between gap-4 mb-8 shadow-sm border border-gray-200">
+        <div className="flex flex-col md:flex-row items-center space-y-4 md:space-y-0 md:space-x-4 w-full md:w-auto">
+          {/* Search by Date */}
+          <div className="relative w-full md:w-64">
             <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
               <svg
-                className="w-5 h-5 text-emerald-500"
+                className="w-5 h-5 text-emerald-600"
                 fill="currentColor"
                 viewBox="0 0 20 20"
               >
@@ -132,19 +123,48 @@ export default function SensorDataPage() {
             </div>
             <input
               type="text"
-              placeholder="dd/mm/yyyy HH:mm:ss"
+              placeholder="Ngày: dd/mm/yyyy"
               value={dateSearch}
               onChange={(e) => setDateSearch(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleSearchClick()}
-              className="bg-[#0f172a] border border-gray-700 text-gray-300 text-sm rounded-lg focus:ring-emerald-500 focus:border-emerald-500 block w-full pl-10 p-2.5 outline-none transition-colors placeholder-gray-500"
+              className="bg-gray-50 border border-gray-300 text-slate-900 text-sm rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 block w-full pl-10 p-2.5 outline-none transition-all placeholder-gray-400"
             />
           </div>
+
+          {/* Search by Value */}
+          <div className="relative w-full md:w-48">
+            <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
+              <svg
+                className="w-5 h-5 text-emerald-600"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth="2"
+                  d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z"
+                />
+              </svg>
+            </div>
+            <input
+              type="text"
+              placeholder="Giá trị: 25.5"
+              value={valueSearch}
+              onChange={(e) => setValueSearch(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleSearchClick()}
+              className="bg-gray-50 border border-gray-300 text-slate-900 text-sm rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 block w-full pl-10 p-2.5 outline-none transition-all placeholder-gray-400"
+            />
+          </div>
+
+          {/* Search Button */}
           <button
             onClick={handleSearchClick}
-            className="bg-emerald-500 hover:bg-emerald-600 text-black font-semibold rounded-lg text-sm px-5 py-2.5 transition-colors flex items-center space-x-2 shadow-md"
+            className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-lg text-sm px-6 py-2.5 transition-colors flex items-center space-x-2 shadow-sm w-full md:w-auto justify-center"
           >
             <svg
-              className="w-4 h-4 text-black"
+              className="w-4 h-4"
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
@@ -160,20 +180,24 @@ export default function SensorDataPage() {
           </button>
         </div>
 
+        {/* Sensor Dropdown */}
         <div className="w-full md:w-48 relative">
           <select
             value={selectedSensor}
-            onChange={(e) => setSelectedSensor(e.target.value)}
-            className="bg-[#0f172a] border border-gray-700 text-gray-300 text-sm rounded-lg focus:ring-emerald-500 focus:border-emerald-500 block w-full p-2.5 outline-none cursor-pointer appearance-none"
+            onChange={(e) => {
+              setSelectedSensor(e.target.value);
+              setCurrentPage(1);
+            }}
+            className="bg-gray-50 border border-gray-300 text-slate-700 text-sm rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 block w-full p-2.5 outline-none cursor-pointer appearance-none pr-10"
           >
             <option value="all">Tất cả cảm biến</option>
             <option value="Độ ẩm">Độ ẩm</option>
             <option value="Ánh sáng">Ánh sáng</option>
             <option value="Nhiệt độ">Nhiệt độ</option>
           </select>
-          <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-400">
+          <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-gray-500">
             <svg
-              className="w-4 h-4 inline-block"
+              className="w-4 h-4"
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
@@ -190,60 +214,49 @@ export default function SensorDataPage() {
       </div>
 
       {/* Data Table */}
-      <div className="bg-[#1e293b] rounded-xl shadow-lg border border-gray-700 overflow-hidden">
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-sm text-left text-gray-400">
-            <thead className="text-xs text-emerald-500 uppercase border-b border-gray-700 bg-[#1e293b]">
+          <table className="w-full text-sm text-left text-slate-600">
+            <thead className="text-xs text-slate-500 uppercase bg-gray-50 border-b border-gray-200">
               <tr>
-                <th
-                  scope="col"
-                  className="px-6 py-5 tracking-wider font-semibold"
-                >
+                <th scope="col" className="px-6 py-4 tracking-wider font-bold">
                   ID
                 </th>
-                <th
-                  scope="col"
-                  className="px-6 py-5 tracking-wider font-semibold"
-                >
+                <th scope="col" className="px-6 py-4 tracking-wider font-bold">
                   Cảm biến
                 </th>
-                <th
-                  scope="col"
-                  className="px-6 py-5 tracking-wider font-semibold"
-                >
+                <th scope="col" className="px-6 py-4 tracking-wider font-bold">
                   Giá trị cảm biến
                 </th>
                 <th
                   scope="col"
-                  className="px-6 py-5 tracking-wider font-semibold cursor-pointer hover:text-emerald-400 transition-colors"
+                  className="px-6 py-4 tracking-wider font-bold cursor-pointer hover:text-emerald-600 transition-colors"
                   onClick={toggleSort}
                 >
                   <div className="flex items-center space-x-2 select-none">
                     <span>Thời gian</span>
-                    <span className="text-lg leading-none">
+                    <span className="text-emerald-600 font-bold">
                       {sortOrder === "desc" ? "↓" : "↑"}
                     </span>
                   </div>
                 </th>
               </tr>
             </thead>
-            <tbody>
+            <tbody className="divide-y divide-gray-100">
               {displayData.length > 0 ? (
                 displayData.map((item, index) => (
                   <tr
                     key={index}
-                    className="bg-[#1e293b] border-b border-gray-700 hover:bg-[#2c3e50] transition-colors"
+                    className="hover:bg-emerald-50/50 transition-colors"
                   >
-                    <td className="px-6 py-4 font-medium text-gray-400 whitespace-nowrap">
+                    <td className="px-6 py-4 font-medium text-slate-500">
                       {item.id}
                     </td>
-                    <td className="px-6 py-4 text-gray-300 whitespace-nowrap">
-                      {item.sensor}
-                    </td>
-                    <td className="px-6 py-4 font-bold text-gray-200 whitespace-nowrap">
+                    <td className="px-6 py-4 text-slate-700">{item.sensor}</td>
+                    <td className="px-6 py-4 font-bold text-slate-900">
                       {item.value}
                     </td>
-                    <td className="px-6 py-4 text-gray-400 whitespace-nowrap">
+                    <td className="px-6 py-4 text-slate-500">
                       {item.timestamp}
                     </td>
                   </tr>
@@ -252,7 +265,7 @@ export default function SensorDataPage() {
                 <tr>
                   <td
                     colSpan={4}
-                    className="px-6 py-10 text-center text-gray-500 text-base"
+                    className="px-6 py-12 text-center text-gray-400"
                   >
                     Không có dữ liệu
                   </td>
@@ -262,23 +275,25 @@ export default function SensorDataPage() {
           </table>
         </div>
 
-        {/* Custom Pagination Controls matching dark theme */}
-        <div className="p-5 flex items-center justify-between border-t border-gray-700 bg-[#1e293b]">
-          <span className="text-sm text-gray-400">
-            Trang {currentPage} / {totalPages}
+        {/* Pagination */}
+        <div className="p-4 flex items-center justify-between bg-white border-t border-gray-100">
+          <span className="text-sm text-slate-500">
+            Trang{" "}
+            <span className="font-semibold text-slate-900">{currentPage}</span>{" "}
+            / {totalPages}
           </span>
-          <div className="flex space-x-3">
+          <div className="flex space-x-2">
             <button
               disabled={currentPage === 1}
               onClick={() => setCurrentPage((p) => p - 1)}
-              className="px-5 py-2 border border-gray-600 rounded-lg text-sm font-medium disabled:opacity-50 hover:bg-[#2c3e50] transition-colors text-gray-300"
+              className="px-4 py-2 border border-gray-200 rounded-lg text-sm font-medium disabled:opacity-40 hover:bg-gray-50 hover:border-gray-300 transition-all text-slate-600"
             >
               Trước
             </button>
             <button
               disabled={currentPage === totalPages || totalPages === 0}
               onClick={() => setCurrentPage((p) => p + 1)}
-              className="px-5 py-2 border border-gray-600 rounded-lg text-sm font-medium disabled:opacity-50 hover:bg-[#2c3e50] transition-colors text-gray-300"
+              className="px-4 py-2 bg-white border border-gray-200 rounded-lg text-sm font-medium disabled:opacity-40 hover:bg-gray-50 hover:border-gray-300 transition-all text-slate-600"
             >
               Sau
             </button>

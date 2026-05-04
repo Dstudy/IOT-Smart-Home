@@ -18,6 +18,9 @@ class MqttService extends EventEmitter {
     this.topicData = "iot/datasensors";
     this.topicControl = "iot/devicecontrol";
     this.topicResponse = "iot/dataresponse";
+
+    this.lastSeenTimestamp = 0;
+    this.RECONNECT_TIMEOUT = 4000; // 3 seconds gap counts as reconnect
   }
 
   connect() {
@@ -66,7 +69,6 @@ class MqttService extends EventEmitter {
   async handleSensorData(payloadStr) {
     // Expected JSON: {"temp": 25.5, "hum": 60, "lightValue": 800, "gasState": 1}
     const data = JSON.parse(payloadStr);
-    console.log("📥 MQTT Sensor Data Received:", data);
 
     const sensorData = {};
     if (data.temp !== undefined) sensorData.temperature = data.temp;
@@ -126,10 +128,55 @@ class MqttService extends EventEmitter {
   }
   handleDeviceResponse(payloadStr) {
     // Expected JSON: {"device": "Fan", "action": "ON", "status": "success"}
-    const data = JSON.parse(payloadStr);
+    try {
+      console.log("[MQTT] Received device response:", payloadStr);
+      const data = JSON.parse(payloadStr);
 
-    // Emit an event that the router can listen to
-    this.emit("deviceResponse", data);
+      // NẾU ESP32 BÁO SẴN SÀNG -> THỰC HIỆN SYNC
+      if (data.device === "System" && data.action === "Ready") {
+        console.log("🚀 ESP32 is ready. Starting synchronization...");
+        this.syncDeviceState();
+        return; // Không cần emit cho router vì đây là lệnh nội bộ hệ thống
+      }
+
+      // Các phản hồi toggle thiết bị thông thường
+      this.emit("deviceResponse", data);
+    } catch (err) {
+      console.error("Error handling device response:", err.message);
+    }
+  }
+
+  /**
+   * Syncs all device states from database to the hardware
+   */
+  async syncDeviceState() {
+    try {
+      const devices = await dataStore.getDevices();
+      // console.log("[MQTT] Syncing states for devices:", Object.keys(devices));
+
+      for (const [key, device] of Object.entries(devices)) {
+        // Map db name to ESP command and publish directly
+        let espDeviceName = "";
+        if (device.name === "ac") espDeviceName = "AC";
+        else if (device.name === "fan") espDeviceName = "Fan";
+        else if (device.name === "light") espDeviceName = "Light";
+        else if (device.name === "dehumidifier") espDeviceName = "Dehumidifier";
+        else if (device.name === "screen") espDeviceName = "Screen";
+
+        if (espDeviceName) {
+          const command =
+            device.status === "ON"
+              ? `On${espDeviceName}`
+              : `Off${espDeviceName}`;
+          console.log(
+            `[MQTT] Sync: Publishing to ${this.topicControl}: ${command}`,
+          );
+          this.client.publish(this.topicControl, command);
+        }
+      }
+    } catch (err) {
+      console.error("❌ Error syncing device states:", err.message);
+    }
   }
 
   /**
@@ -147,6 +194,8 @@ class MqttService extends EventEmitter {
       if (deviceName === "ac") espDeviceName = "AC";
       else if (deviceName === "fan") espDeviceName = "Fan";
       else if (deviceName === "light") espDeviceName = "Light";
+      else if (deviceName === "dehumidifier") espDeviceName = "Dehumidifier";
+      else if (deviceName === "screen") espDeviceName = "Screen";
       else return reject(new Error("Unknown device type"));
 
       const command =
@@ -159,6 +208,9 @@ class MqttService extends EventEmitter {
           response.device.toUpperCase() === espDeviceName.toUpperCase() &&
           response.action === targetState
         ) {
+          console.log(
+            `[MQTT] Received response for ${response.device} action ${response.action}: ${response.status}`,
+          );
           clearTimeout(timeoutId);
           this.removeListener("deviceResponse", onResponse);
 
@@ -173,8 +225,8 @@ class MqttService extends EventEmitter {
       // Set a timeout of 5 seconds to give up if the ESP32 doesn't respond
       const timeoutId = setTimeout(() => {
         this.removeListener("deviceResponse", onResponse);
-        reject(new Error("MQTT device response timeout (5000ms)"));
-      }, 5000);
+        reject(new Error("MQTT device response timeout (10000ms)"));
+      }, 10000);
 
       // Listen for the response EVENT before publishing
       this.on("deviceResponse", onResponse);
